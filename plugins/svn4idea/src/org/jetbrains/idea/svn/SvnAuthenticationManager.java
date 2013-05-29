@@ -323,6 +323,70 @@ public class SvnAuthenticationManager extends DefaultSVNAuthenticationManager im
     return myKeyAlgorithm.get(Thread.currentThread());
   }
 
+  @Override
+  public void acknowledgeConnectionSuccessful(SVNURL url, String method) {
+    CommonProxy.getInstance().removeNoProxy(url.getProtocol(), url.getHost(), url.getPort());
+    SSLExceptionsHelper.removeInfo();
+    ourThreadLocalProvider.remove();
+  }
+
+  @Override
+  public void acknowledgeAuthentication(boolean accepted,
+                                        String kind,
+                                        String realm,
+                                        SVNErrorMessage errorMessage,
+                                        SVNAuthentication authentication) throws SVNException {
+    acknowledgeAuthentication(accepted, kind, realm, errorMessage, authentication, null);
+  }
+
+  @Override
+  public void acknowledgeAuthentication(boolean accepted,
+                                        String kind,
+                                        String realm,
+                                        SVNErrorMessage errorMessage,
+                                        SVNAuthentication authentication,
+                                        SVNURL url) throws SVNException {
+    SSLExceptionsHelper.removeInfo();
+    ourThreadLocalProvider.remove();
+    if (url != null) {
+      CommonProxy.getInstance().removeNoProxy(url.getProtocol(), url.getHost(), url.getPort());
+    }
+    boolean successSaving = false;
+    myListener.getMulticaster().acknowledge(accepted, kind, realm, errorMessage, authentication);
+    try {
+      final boolean authStorageEnabled = getHostOptionsProvider().getHostOptions(authentication.getURL()).isAuthStorageEnabled();
+      final SVNAuthentication proxy = ProxySvnAuthentication.proxy(authentication, authStorageEnabled, myArtificialSaving);
+      super.acknowledgeAuthentication(accepted, kind, realm, errorMessage, proxy);
+      successSaving = true;
+    } finally {
+      mySavePermissions.remove();
+      if (myArtificialSaving) {
+        myArtificialSaving = false;
+        throw new CredentialsSavedException(successSaving);
+      }
+    }
+  }
+
+  public void acknowledgeForSSL(boolean accepted, String kind, String realm, SVNErrorMessage message, SVNAuthentication proxy) {
+    if (accepted && proxy instanceof SVNSSLAuthentication && (((SVNSSLAuthentication) proxy).getCertificateFile() != null)) {
+      final SVNSSLAuthentication svnsslAuthentication = (SVNSSLAuthentication)proxy;
+      final SVNURL url = svnsslAuthentication.getURL();
+
+      final IdeaSVNHostOptionsProvider provider = getHostOptionsProvider();
+      final SVNCompositeConfigFile serversFile = provider.getServersFile();
+      String groupName = getGroupName(serversFile.getProperties("groups"), url.getHost());
+
+      if (StringUtil.isEmptyOrSpaces(groupName)) {
+        serversFile.setPropertyValue("global", SvnServerFileKeys.SSL_CLIENT_CERT_FILE, svnsslAuthentication.getCertificateFile().getPath(), true);
+        //serversFile.setPropertyValue("global", SvnServerFileKeys.SSL_CLIENT_CERT_PASSWORD, null, true);
+      } else {
+        serversFile.setPropertyValue(groupName, SvnServerFileKeys.SSL_CLIENT_CERT_FILE, svnsslAuthentication.getCertificateFile().getPath(), true);
+        //serversFile.setPropertyValue(groupName, SvnServerFileKeys.SSL_CLIENT_CERT_PASSWORD, null, true);
+      }
+      serversFile.save();
+    }
+  }
+
   public ISVNProxyManager getProxyManager(SVNURL url) throws SVNException {
     // this code taken from default manager (changed for system properties reading)
       String host = url.getHost();

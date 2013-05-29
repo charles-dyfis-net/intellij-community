@@ -66,7 +66,7 @@ public class SvnInteractiveAuthenticationProvider implements ISVNAuthenticationP
   public SVNAuthentication requestClientAuthentication(final String kind,
                                                        final SVNURL url,
                                                        final String realm,
-                                                       SVNErrorMessage errorMessage,
+                                                       final SVNErrorMessage errorMessage,
                                                        final SVNAuthentication previousAuth,
                                                        final boolean authMayBeStored) {
     final MyCallState callState = new MyCallState(true, false);
@@ -168,8 +168,8 @@ public class SvnInteractiveAuthenticationProvider implements ISVNAuthenticationP
             result[0] = new SVNSSLAuthentication(new File(dialog.getCertificatePath()), String.valueOf(dialog.getCertificatePassword()),
                                                  dialog.getSaveAuth(), url, false);
           }
-        };
-      }
+        }
+      };
     }
 
     if (command != null) {

@@ -28,6 +28,7 @@ import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Getter;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.CalledInAwt;
 import com.intellij.openapi.vcs.changes.committed.AbstractCalledLater;
 import com.intellij.openapi.vcs.ui.VcsBalloonProblemNotifier;
@@ -38,6 +39,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.svn.auth.ProviderType;
 import org.jetbrains.idea.svn.auth.SvnAuthenticationInteraction;
 import org.jetbrains.idea.svn.auth.SvnAuthenticationListener;
+import org.jetbrains.idea.svn.config.SvnServerFileKeys;
 import org.tmatesoft.svn.core.SVNErrorMessage;
 import org.tmatesoft.svn.core.SVNException;
 import org.tmatesoft.svn.core.SVNProperties;
@@ -159,27 +161,6 @@ public class SvnAuthenticationManager extends DefaultSVNAuthenticationManager im
     myConfigDirectory = new File(authDir.getParent());
     myPersistentAuthenticationProviderProxy = new PersistentAuthenticationProviderProxy(authDir, userName);
     return myPersistentAuthenticationProviderProxy;
-  }
-
-  @Override
-  public void acknowledgeAuthentication(boolean accepted,
-                                        String kind,
-                                        String realm,
-                                        SVNErrorMessage errorMessage,
-                                        SVNAuthentication authentication) throws SVNException {
-    boolean successSaving = false;
-    myListener.getMulticaster().acknowledge(accepted, kind, realm, errorMessage, authentication);
-    try {
-      final boolean authStorageEnabled = getHostOptionsProvider().getHostOptions(authentication.getURL()).isAuthStorageEnabled();
-      final SVNAuthentication proxy = ProxySvnAuthentication.proxy(authentication, authStorageEnabled, myArtificialSaving);
-      super.acknowledgeAuthentication(accepted, kind, realm, errorMessage, proxy);
-      successSaving = true;
-    } finally {
-      mySavePermissions.remove();
-      if (myArtificialSaving) {
-        throw new CredentialsSavedException(successSaving);
-      }
-    }
   }
 
   private class PersistentAuthenticationProviderProxy implements ISVNAuthenticationProvider, ISVNPersistentAuthenticationProvider {
@@ -324,33 +305,11 @@ public class SvnAuthenticationManager extends DefaultSVNAuthenticationManager im
   }
 
   @Override
-  public void acknowledgeConnectionSuccessful(SVNURL url, String method) {
-    CommonProxy.getInstance().removeNoProxy(url.getProtocol(), url.getHost(), url.getPort());
-    SSLExceptionsHelper.removeInfo();
-    ourThreadLocalProvider.remove();
-  }
-
-  @Override
   public void acknowledgeAuthentication(boolean accepted,
                                         String kind,
                                         String realm,
                                         SVNErrorMessage errorMessage,
                                         SVNAuthentication authentication) throws SVNException {
-    acknowledgeAuthentication(accepted, kind, realm, errorMessage, authentication, null);
-  }
-
-  @Override
-  public void acknowledgeAuthentication(boolean accepted,
-                                        String kind,
-                                        String realm,
-                                        SVNErrorMessage errorMessage,
-                                        SVNAuthentication authentication,
-                                        SVNURL url) throws SVNException {
-    SSLExceptionsHelper.removeInfo();
-    ourThreadLocalProvider.remove();
-    if (url != null) {
-      CommonProxy.getInstance().removeNoProxy(url.getProtocol(), url.getHost(), url.getPort());
-    }
     boolean successSaving = false;
     myListener.getMulticaster().acknowledge(accepted, kind, realm, errorMessage, authentication);
     try {
@@ -361,29 +320,8 @@ public class SvnAuthenticationManager extends DefaultSVNAuthenticationManager im
     } finally {
       mySavePermissions.remove();
       if (myArtificialSaving) {
-        myArtificialSaving = false;
         throw new CredentialsSavedException(successSaving);
       }
-    }
-  }
-
-  public void acknowledgeForSSL(boolean accepted, String kind, String realm, SVNErrorMessage message, SVNAuthentication proxy) {
-    if (accepted && proxy instanceof SVNSSLAuthentication && (((SVNSSLAuthentication) proxy).getCertificateFile() != null)) {
-      final SVNSSLAuthentication svnsslAuthentication = (SVNSSLAuthentication)proxy;
-      final SVNURL url = svnsslAuthentication.getURL();
-
-      final IdeaSVNHostOptionsProvider provider = getHostOptionsProvider();
-      final SVNCompositeConfigFile serversFile = provider.getServersFile();
-      String groupName = getGroupName(serversFile.getProperties("groups"), url.getHost());
-
-      if (StringUtil.isEmptyOrSpaces(groupName)) {
-        serversFile.setPropertyValue("global", SvnServerFileKeys.SSL_CLIENT_CERT_FILE, svnsslAuthentication.getCertificateFile().getPath(), true);
-        //serversFile.setPropertyValue("global", SvnServerFileKeys.SSL_CLIENT_CERT_PASSWORD, null, true);
-      } else {
-        serversFile.setPropertyValue(groupName, SvnServerFileKeys.SSL_CLIENT_CERT_FILE, svnsslAuthentication.getCertificateFile().getPath(), true);
-        //serversFile.setPropertyValue(groupName, SvnServerFileKeys.SSL_CLIENT_CERT_PASSWORD, null, true);
-      }
-      serversFile.save();
     }
   }
 

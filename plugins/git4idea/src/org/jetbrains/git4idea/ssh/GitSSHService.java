@@ -16,6 +16,14 @@
 package org.jetbrains.git4idea.ssh;
 
 import com.intellij.openapi.util.io.FileUtil;
+import com.jcraft.jsch.agentproxy.AgentProxy;
+import com.jcraft.jsch.agentproxy.TrileadAgentFactory;
+import com.jcraft.jsch.agentproxy.TrileadAgentProxy;
+import com.jcraft.jsch.agentproxy.connector.PageantConnector;
+import com.jcraft.jsch.agentproxy.connector.SSHAgentConnector;
+import com.jcraft.jsch.agentproxy.usocket.JNAUSocketFactory;
+import com.sun.jna.Structure;
+import com.sun.jna.platform.win32.User32;
 import com.trilead.ssh2.KnownHosts;
 import gnu.trove.THashMap;
 import org.apache.commons.codec.DecoderException;
@@ -66,8 +74,20 @@ public abstract class GitSSHService {
   public synchronized File getScriptPath() throws IOException {
     if (myScriptPath == null || !myScriptPath.exists()) {
       ScriptGenerator generator = new ScriptGenerator(GitSSHHandler.GIT_SSH_PREFIX, SSHMain.class, getTempDir());
-      generator.addClasses(XmlRpcClientLite.class, DecoderException.class);
-      generator.addClasses(KnownHosts.class, FileUtil.class);
+      generator.addClasses(
+        XmlRpcClientLite.class,     /* apache-xmlrpc */
+        DecoderException.class,     /* apache-commons-codec */
+        FileUtil.class,             /* openapi */
+        KnownHosts.class,           /* trilead-ssh2 */
+        TrileadAgentFactory.class,  /* jsch-agentproxy-trilead-thick */
+        TrileadAgentProxy.class,    /* jsch-agentproxy-trilead */
+        AgentProxy.class,           /* jsch-agentproxy */
+        PageantConnector.class,     /* jsch-agentproxy-pageant */
+        SSHAgentConnector.class,    /* jsch-agentproxy-sshagent */
+        JNAUSocketFactory.class,    /* jsch-agentproxy-usocket-jna */
+        Structure.class,            /* jna */
+        User32.class                /* jna-platform */
+        );
       generator.addResource(SSHMainBundle.class, "/org/jetbrains/git4idea/ssh/SSHMainBundle.properties");
       myScriptPath = generator.generate();
     }
